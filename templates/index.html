@@ -1,0 +1,735 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Weather Day Analyzer - NOAA Precipitation Analysis</title>
+    <style>
+        :root {
+            --primary: #2c5282;
+            --primary-dark: #1a365d;
+            --secondary: #4a5568;
+            --accent: #3182ce;
+            --success: #38a169;
+            --warning: #d69e2e;
+            --error: #e53e3e;
+            --bg: #f7fafc;
+            --card-bg: #ffffff;
+            --border: #e2e8f0;
+            --text: #2d3748;
+            --text-light: #718096;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: var(--bg);
+            color: var(--text);
+            line-height: 1.6;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        header {
+            background: linear-gradient(135deg, var(--primary) 0%, var(--primary-dark) 100%);
+            color: white;
+            padding: 30px 0;
+            margin-bottom: 30px;
+        }
+
+        header h1 {
+            font-size: 1.8em;
+            font-weight: 600;
+            margin-bottom: 8px;
+        }
+
+        header p {
+            opacity: 0.9;
+            font-size: 1.05em;
+        }
+
+        .card {
+            background: var(--card-bg);
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            padding: 25px;
+            margin-bottom: 25px;
+        }
+
+        .card h2 {
+            color: var(--primary);
+            font-size: 1.2em;
+            margin-bottom: 20px;
+            padding-bottom: 10px;
+            border-bottom: 2px solid var(--border);
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        .form-group label {
+            display: block;
+            font-weight: 600;
+            margin-bottom: 8px;
+            color: var(--secondary);
+        }
+
+        .form-group input[type="text"],
+        .form-group input[type="password"] {
+            width: 100%;
+            max-width: 300px;
+            padding: 12px 15px;
+            border: 2px solid var(--border);
+            border-radius: 6px;
+            font-size: 1em;
+            transition: border-color 0.2s;
+        }
+
+        .form-group input:focus {
+            outline: none;
+            border-color: var(--accent);
+        }
+
+        .form-group .hint {
+            font-size: 0.9em;
+            color: var(--text-light);
+            margin-top: 6px;
+        }
+
+        .form-group .hint a {
+            color: var(--accent);
+            text-decoration: none;
+        }
+
+        .form-group .hint a:hover {
+            text-decoration: underline;
+        }
+
+        .checkbox-group {
+            display: flex;
+            gap: 20px;
+            flex-wrap: wrap;
+        }
+
+        .checkbox-group label {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            cursor: pointer;
+            font-weight: normal;
+        }
+
+        .checkbox-group input[type="checkbox"] {
+            width: 18px;
+            height: 18px;
+            cursor: pointer;
+        }
+
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 12px 24px;
+            border: none;
+            border-radius: 6px;
+            font-size: 1em;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .btn-primary {
+            background-color: var(--primary);
+            color: white;
+        }
+
+        .btn-primary:hover {
+            background-color: var(--primary-dark);
+        }
+
+        .btn-primary:disabled {
+            background-color: var(--text-light);
+            cursor: not-allowed;
+        }
+
+        .btn-secondary {
+            background-color: var(--border);
+            color: var(--secondary);
+        }
+
+        .btn-secondary:hover {
+            background-color: #cbd5e0;
+        }
+
+        .btn-export {
+            padding: 8px 16px;
+            font-size: 0.9em;
+        }
+
+        .token-status {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 6px 12px;
+            border-radius: 20px;
+            font-size: 0.9em;
+            margin-left: 10px;
+        }
+
+        .token-valid {
+            background-color: #c6f6d5;
+            color: #22543d;
+        }
+
+        .token-invalid {
+            background-color: #fed7d7;
+            color: #742a2a;
+        }
+
+        .loading {
+            display: none;
+            align-items: center;
+            gap: 10px;
+            color: var(--text-light);
+        }
+
+        .loading.active {
+            display: flex;
+        }
+
+        .spinner {
+            width: 20px;
+            height: 20px;
+            border: 3px solid var(--border);
+            border-top-color: var(--primary);
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        .alert {
+            padding: 15px 20px;
+            border-radius: 6px;
+            margin-bottom: 20px;
+            display: none;
+        }
+
+        .alert.show {
+            display: block;
+        }
+
+        .alert-error {
+            background-color: #fed7d7;
+            border-left: 4px solid var(--error);
+            color: #742a2a;
+        }
+
+        .alert-success {
+            background-color: #c6f6d5;
+            border-left: 4px solid var(--success);
+            color: #22543d;
+        }
+
+        .alert-warning {
+            background-color: #fef3c7;
+            border-left: 4px solid var(--warning);
+            color: #92400e;
+        }
+
+        .results-section {
+            display: none;
+        }
+
+        .results-section.show {
+            display: block;
+        }
+
+        .station-info {
+            background-color: #ebf4ff;
+            padding: 15px 20px;
+            border-radius: 6px;
+            margin-bottom: 20px;
+        }
+
+        .station-info p {
+            margin-bottom: 5px;
+        }
+
+        .station-info strong {
+            color: var(--primary);
+        }
+
+        .tabs {
+            display: flex;
+            gap: 5px;
+            border-bottom: 2px solid var(--border);
+            margin-bottom: 20px;
+        }
+
+        .tab {
+            padding: 10px 20px;
+            background: none;
+            border: none;
+            cursor: pointer;
+            font-size: 1em;
+            color: var(--text-light);
+            border-bottom: 3px solid transparent;
+            margin-bottom: -2px;
+            transition: all 0.2s;
+        }
+
+        .tab:hover {
+            color: var(--primary);
+        }
+
+        .tab.active {
+            color: var(--primary);
+            border-bottom-color: var(--primary);
+            font-weight: 600;
+        }
+
+        .tab-content {
+            display: none;
+        }
+
+        .tab-content.active {
+            display: block;
+        }
+
+        .report-container {
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            overflow: hidden;
+        }
+
+        .report-container iframe {
+            width: 100%;
+            min-height: 600px;
+            border: none;
+        }
+
+        .export-buttons {
+            display: flex;
+            gap: 10px;
+            margin-top: 20px;
+            padding-top: 20px;
+            border-top: 1px solid var(--border);
+        }
+
+        .progress-bar {
+            height: 4px;
+            background-color: var(--border);
+            border-radius: 2px;
+            overflow: hidden;
+            margin: 20px 0;
+            display: none;
+        }
+
+        .progress-bar.active {
+            display: block;
+        }
+
+        .progress-bar .progress {
+            height: 100%;
+            background-color: var(--primary);
+            width: 0%;
+            transition: width 0.3s;
+        }
+
+        footer {
+            text-align: center;
+            padding: 30px;
+            color: var(--text-light);
+            font-size: 0.9em;
+        }
+
+        footer a {
+            color: var(--accent);
+            text-decoration: none;
+        }
+
+        @media (max-width: 768px) {
+            .checkbox-group {
+                flex-direction: column;
+                gap: 12px;
+            }
+
+            .form-group input[type="text"],
+            .form-group input[type="password"] {
+                max-width: 100%;
+            }
+
+            .export-buttons {
+                flex-wrap: wrap;
+            }
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <div class="container">
+            <h1>Weather Day Analyzer</h1>
+            <p>Historical precipitation analysis for construction weather day allowances</p>
+        </div>
+    </header>
+
+    <main class="container">
+        <!-- API Token Section -->
+        <div class="card" id="token-section">
+            <h2>NOAA API Token</h2>
+            <div class="form-group">
+                <label for="api-token">Enter your NOAA CDO API Token</label>
+                <input type="password" id="api-token" placeholder="Your API token">
+                <span class="token-status" id="token-status" style="display: none;"></span>
+                <p class="hint">
+                    Get a free token from <a href="https://www.ncdc.noaa.gov/cdo-web/token" target="_blank">NOAA Climate Data Online</a>
+                </p>
+            </div>
+            <button class="btn btn-primary" id="validate-token-btn" onclick="validateToken()">
+                Validate Token
+            </button>
+            <div class="loading" id="token-loading">
+                <div class="spinner"></div>
+                <span>Validating token...</span>
+            </div>
+        </div>
+
+        <!-- Analysis Form -->
+        <div class="card" id="analysis-section">
+            <h2>Analyze Location</h2>
+            <div id="analysis-alert" class="alert"></div>
+
+            <div class="form-group">
+                <label for="zip-code">US Zip Code</label>
+                <input type="text" id="zip-code" placeholder="e.g., 90210" maxlength="10">
+                <p class="hint">Enter a 5-digit US zip code</p>
+            </div>
+
+            <div class="form-group">
+                <label>Analysis Periods</label>
+                <div class="checkbox-group">
+                    <label>
+                        <input type="checkbox" name="period" value="1yr"> 1 Year
+                    </label>
+                    <label>
+                        <input type="checkbox" name="period" value="2yr"> 2 Years
+                    </label>
+                    <label>
+                        <input type="checkbox" name="period" value="5yr" checked> 5 Years
+                    </label>
+                    <label>
+                        <input type="checkbox" name="period" value="10yr"> 10 Years
+                    </label>
+                </div>
+            </div>
+
+            <button class="btn btn-primary" id="analyze-btn" onclick="runAnalysis()">
+                Analyze Precipitation Data
+            </button>
+            <div class="loading" id="analysis-loading">
+                <div class="spinner"></div>
+                <span id="loading-text">Searching for weather stations...</span>
+            </div>
+            <div class="progress-bar" id="progress-bar">
+                <div class="progress" id="progress"></div>
+            </div>
+        </div>
+
+        <!-- Results Section -->
+        <div class="card results-section" id="results-section">
+            <h2>Analysis Results</h2>
+
+            <div class="station-info" id="station-info"></div>
+
+            <div class="tabs" id="period-tabs"></div>
+
+            <div id="tab-contents"></div>
+        </div>
+    </main>
+
+    <footer>
+        <p>Data source: <a href="https://www.ncdc.noaa.gov/cdo-web/" target="_blank">NOAA Climate Data Online</a></p>
+        <p>Precipitation threshold: &ge;0.5 inches per day</p>
+    </footer>
+
+    <script>
+        let currentToken = null;
+        let analysisResults = null;
+
+        function showAlert(elementId, message, type) {
+            const alert = document.getElementById(elementId);
+            alert.textContent = message;
+            alert.className = `alert alert-${type} show`;
+        }
+
+        function hideAlert(elementId) {
+            const alert = document.getElementById(elementId);
+            alert.className = 'alert';
+        }
+
+        async function validateToken() {
+            const tokenInput = document.getElementById('api-token');
+            const token = tokenInput.value.trim();
+            const statusEl = document.getElementById('token-status');
+            const loadingEl = document.getElementById('token-loading');
+            const btn = document.getElementById('validate-token-btn');
+
+            if (!token) {
+                statusEl.textContent = 'Token required';
+                statusEl.className = 'token-status token-invalid';
+                statusEl.style.display = 'inline-flex';
+                return;
+            }
+
+            btn.disabled = true;
+            loadingEl.classList.add('active');
+            statusEl.style.display = 'none';
+
+            try {
+                const response = await fetch('/api/validate-token', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ token })
+                });
+
+                const data = await response.json();
+
+                if (data.valid) {
+                    currentToken = token;
+                    statusEl.textContent = 'Valid';
+                    statusEl.className = 'token-status token-valid';
+                } else {
+                    statusEl.textContent = data.error || 'Invalid token';
+                    statusEl.className = 'token-status token-invalid';
+                }
+            } catch (error) {
+                statusEl.textContent = 'Connection error';
+                statusEl.className = 'token-status token-invalid';
+            }
+
+            statusEl.style.display = 'inline-flex';
+            loadingEl.classList.remove('active');
+            btn.disabled = false;
+        }
+
+        async function runAnalysis() {
+            const zipCode = document.getElementById('zip-code').value.trim();
+            const token = currentToken || document.getElementById('api-token').value.trim();
+
+            const periodCheckboxes = document.querySelectorAll('input[name="period"]:checked');
+            const periods = Array.from(periodCheckboxes).map(cb => cb.value);
+
+            hideAlert('analysis-alert');
+
+            if (!zipCode) {
+                showAlert('analysis-alert', 'Please enter a zip code', 'error');
+                return;
+            }
+
+            if (!token) {
+                showAlert('analysis-alert', 'Please enter and validate your NOAA API token first', 'error');
+                return;
+            }
+
+            if (periods.length === 0) {
+                showAlert('analysis-alert', 'Please select at least one analysis period', 'error');
+                return;
+            }
+
+            const btn = document.getElementById('analyze-btn');
+            const loadingEl = document.getElementById('analysis-loading');
+            const progressBar = document.getElementById('progress-bar');
+            const progress = document.getElementById('progress');
+            const loadingText = document.getElementById('loading-text');
+
+            btn.disabled = true;
+            loadingEl.classList.add('active');
+            progressBar.classList.add('active');
+            progress.style.width = '10%';
+            loadingText.textContent = 'Finding location coordinates...';
+
+            try {
+                progress.style.width = '30%';
+                loadingText.textContent = 'Searching for nearby weather stations...';
+
+                const response = await fetch('/api/analyze', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ zip_code: zipCode, token, periods })
+                });
+
+                progress.style.width = '70%';
+                loadingText.textContent = 'Processing precipitation data...';
+
+                const data = await response.json();
+
+                progress.style.width = '100%';
+
+                if (data.success) {
+                    analysisResults = data;
+                    displayResults(data);
+                    showAlert('analysis-alert', 'Analysis complete!', 'success');
+                    setTimeout(() => hideAlert('analysis-alert'), 3000);
+                } else {
+                    showAlert('analysis-alert', data.error || 'Analysis failed', 'error');
+                }
+
+            } catch (error) {
+                showAlert('analysis-alert', 'Connection error: ' + error.message, 'error');
+            }
+
+            btn.disabled = false;
+            loadingEl.classList.remove('active');
+            setTimeout(() => {
+                progressBar.classList.remove('active');
+                progress.style.width = '0%';
+            }, 500);
+        }
+
+        function displayResults(data) {
+            const resultsSection = document.getElementById('results-section');
+            const stationInfo = document.getElementById('station-info');
+            const tabsContainer = document.getElementById('period-tabs');
+            const contentsContainer = document.getElementById('tab-contents');
+
+            // Display station info
+            const station = data.station;
+            const location = data.location;
+
+            stationInfo.innerHTML = `
+                <p><strong>Weather Station:</strong> ${station.name}</p>
+                <p><strong>Location:</strong> ${station.distance_miles} miles ${station.direction} of ${location.full_location}</p>
+                <p><strong>Station ID:</strong> ${station.id}</p>
+            `;
+
+            // Create tabs for each period
+            tabsContainer.innerHTML = '';
+            contentsContainer.innerHTML = '';
+
+            const periods = Object.keys(data.results);
+            periods.forEach((period, index) => {
+                const result = data.results[period];
+
+                // Create tab button
+                const tab = document.createElement('button');
+                tab.className = 'tab' + (index === 0 ? ' active' : '');
+                tab.textContent = result.period_name;
+                tab.onclick = () => switchTab(period);
+                tab.dataset.period = period;
+                tabsContainer.appendChild(tab);
+
+                // Create tab content
+                const content = document.createElement('div');
+                content.className = 'tab-content' + (index === 0 ? ' active' : '');
+                content.id = `tab-${period}`;
+
+                content.innerHTML = `
+                    <div class="report-container">
+                        <iframe srcdoc="${escapeHtml(result.html_report)}"></iframe>
+                    </div>
+                    <div class="export-buttons">
+                        <button class="btn btn-secondary btn-export" onclick="exportReport('${period}', 'excel')">
+                            Export to Excel
+                        </button>
+                        <button class="btn btn-secondary btn-export" onclick="exportReport('${period}', 'csv')">
+                            Export to CSV
+                        </button>
+                        <button class="btn btn-secondary btn-export" onclick="exportReport('${period}', 'pdf')">
+                            Export to PDF
+                        </button>
+                    </div>
+                `;
+
+                contentsContainer.appendChild(content);
+            });
+
+            resultsSection.classList.add('show');
+            resultsSection.scrollIntoView({ behavior: 'smooth' });
+        }
+
+        function switchTab(period) {
+            document.querySelectorAll('.tab').forEach(tab => {
+                tab.classList.toggle('active', tab.dataset.period === period);
+            });
+
+            document.querySelectorAll('.tab-content').forEach(content => {
+                content.classList.toggle('active', content.id === `tab-${period}`);
+            });
+        }
+
+        async function exportReport(period, format) {
+            if (!analysisResults) return;
+
+            const result = analysisResults.results[period];
+
+            try {
+                const response = await fetch(`/api/export/${format}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        station: analysisResults.station,
+                        location: analysisResults.location,
+                        analysis: result.analysis,
+                        period_name: result.period_name
+                    })
+                });
+
+                if (response.ok) {
+                    const blob = await response.blob();
+                    const url = window.URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+
+                    const contentDisposition = response.headers.get('Content-Disposition');
+                    const filename = contentDisposition
+                        ? contentDisposition.split('filename=')[1]?.replace(/"/g, '')
+                        : `weather_analysis.${format === 'excel' ? 'xlsx' : format}`;
+
+                    a.download = filename;
+                    document.body.appendChild(a);
+                    a.click();
+                    window.URL.revokeObjectURL(url);
+                    a.remove();
+                } else {
+                    const error = await response.json();
+                    alert('Export failed: ' + (error.error || 'Unknown error'));
+                }
+            } catch (error) {
+                alert('Export failed: ' + error.message);
+            }
+        }
+
+        function escapeHtml(str) {
+            return str
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#039;');
+        }
+
+        // Auto-validate token on Enter key
+        document.getElementById('api-token').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') validateToken();
+        });
+
+        // Auto-analyze on Enter key
+        document.getElementById('zip-code').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') runAnalysis();
+        });
+    </script>
+</body>
+</html>
