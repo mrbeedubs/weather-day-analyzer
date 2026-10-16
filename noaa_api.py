@@ -13,6 +13,7 @@ from typing import Optional, Dict, List, Tuple
 from math import radians, cos, sin, asin, sqrt
 import time
 import logging
+import threading
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -32,10 +33,14 @@ STATION_TYPE_PRIORITY = {
 }
 
 
+_REQUEST_LOCK = threading.Lock()
+_LAST_REQUEST = {}
+
+
 class NOAAClient:
     """Client for interacting with NOAA Climate Data Online API."""
 
-    BASE_URL = "https://www.ncdc.noaa.gov/cdo-web/api/v2"
+    BASE_URL = "https://www.ncei.noaa.gov/cdo-web/api/v2"
 
     def __init__(self, api_token: str, debug: bool = False):
         """
@@ -61,12 +66,11 @@ class NOAAClient:
 
     def _rate_limit(self):
         """Implement rate limiting to avoid API throttling."""
-        if self._last_request_time:
-            elapsed = time.time() - self._last_request_time
-            if elapsed < 0.25:  # Max ~4 requests per second
+        with _REQUEST_LOCK:
+            elapsed = time.monotonic() - _LAST_REQUEST.get(self.api_token, 0)
+            if elapsed < 0.25:
                 time.sleep(0.25 - elapsed)
-        self._last_request_time = time.time()
-        self._request_count += 1
+            _LAST_REQUEST[self.api_token] = time.monotonic()
 
     def _make_request(self, endpoint: str, params: Dict = None, max_retries: int = 3) -> Optional[Dict]:
         """
@@ -112,7 +116,7 @@ class NOAAClient:
                     if attempt < max_retries - 1:
                         time.sleep(1)
                         continue
-                    return None
+                    raise ConnectionError(f"NOAA request failed (HTTP {response.status_code}); analysis was not completed.")
 
             except requests.RequestException as e:
                 logger.error(f"Request error: {str(e)}")
@@ -121,7 +125,7 @@ class NOAAClient:
                     continue
                 raise ConnectionError(f"Failed to connect to NOAA API: {str(e)}")
 
-        return None
+        raise ConnectionError("NOAA rate limit retries exhausted; try again later.")
 
     def _get_station_priority(self, station_id: str) -> int:
         """
@@ -222,8 +226,9 @@ class NOAAClient:
         # Define bounding box
         min_lat = latitude - radius_degrees
         max_lat = latitude + radius_degrees
-        min_lon = longitude - radius_degrees
-        max_lon = longitude + radius_degrees
+        lon_radius = radius_degrees / max(cos(radians(latitude)), 0.01)
+        min_lon = max(-180, longitude - lon_radius)
+        max_lon = min(180, longitude + lon_radius)
 
         extent = f"{min_lat},{min_lon},{max_lat},{max_lon}"
 
@@ -274,6 +279,9 @@ class NOAAClient:
             distance = self._haversine_distance(
                 latitude, longitude, station_lat, station_lon
             )
+
+            if distance > search_radius_miles:
+                continue
 
             # Get station type priority
             type_priority = self._get_station_priority(station_id)
@@ -395,7 +403,7 @@ class NOAAClient:
                     "datatypeid": "PRCP",
                     "startdate": year_start,
                     "enddate": year_end,
-                    "units": "standard",  # Returns precipitation in tenths of inches
+                    "units": "standard",  # Standard units; processor expects inches (verify with live sample)
                     "limit": limit,
                     "offset": offset
                 }
@@ -403,11 +411,15 @@ class NOAAClient:
                 result = self._make_request("data", params)
 
                 if not result:
+                    if offset > 1:
+                        raise ConnectionError(f"Incomplete NOAA pagination for {year}; analysis stopped.")
                     if self.debug:
                         logger.debug(f"No data returned for {year} at offset {offset}")
                     break
 
                 if "results" not in result:
+                    if offset > 1 or result.get("metadata", {}).get("resultset", {}).get("count", 0):
+                        raise ConnectionError(f"Missing NOAA records for {year}; analysis stopped.")
                     if self.debug:
                         logger.debug(f"No 'results' key in response for {year} at offset {offset}")
                     break
@@ -467,8 +479,9 @@ class NOAAClient:
 
         min_lat = latitude - radius_degrees
         max_lat = latitude + radius_degrees
-        min_lon = longitude - radius_degrees
-        max_lon = longitude + radius_degrees
+        lon_radius = radius_degrees / max(cos(radians(latitude)), 0.01)
+        min_lon = max(-180, longitude - lon_radius)
+        max_lon = min(180, longitude + lon_radius)
 
         extent = f"{min_lat},{min_lon},{max_lat},{max_lon}"
         start_date = f"{start_year}-01-01"
