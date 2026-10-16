@@ -8,6 +8,13 @@ Uses multiple fallback methods for reliability.
 import requests
 from typing import Optional, Tuple, Dict
 import re
+import os
+import time
+import threading
+
+_GEOCODE_LOCK = threading.Lock()
+_GEOCODE_CACHE = {}
+_LAST_NOMINATIM = 0.0
 
 
 class ZipCodeGeocoder:
@@ -20,6 +27,7 @@ class ZipCodeGeocoder:
     NOMINATIM_URL = "https://nominatim.openstreetmap.org/search"
 
     def __init__(self):
+        self.NOMINATIM_URL = os.environ.get("NOMINATIM_URL", self.NOMINATIM_URL)
         self.session = requests.Session()
         self.session.headers.update({
             "User-Agent": "WeatherDayAnalyzer/1.0 (Construction Weather Analysis Tool)"
@@ -56,15 +64,23 @@ class ZipCodeGeocoder:
         # Use only first 5 digits
         zip_code = zip_code.strip()[:5]
 
+        with _GEOCODE_LOCK:
+            return self._geocode_cached(zip_code)
+
+    def _geocode_cached(self, zip_code):
+        if zip_code in _GEOCODE_CACHE:
+            return dict(_GEOCODE_CACHE[zip_code])
         # Try Census Geocoder first
         result = self._geocode_census(zip_code)
         if result:
-            return result
+            _GEOCODE_CACHE[zip_code] = result
+            return dict(result)
 
         # Fallback to Nominatim
         result = self._geocode_nominatim(zip_code)
         if result:
-            return result
+            _GEOCODE_CACHE[zip_code] = result
+            return dict(result)
 
         return None
 
@@ -121,6 +137,11 @@ class ZipCodeGeocoder:
         }
 
         try:
+            global _LAST_NOMINATIM
+            delay = 1.05 - (time.monotonic() - _LAST_NOMINATIM)
+            if delay > 0:
+                time.sleep(delay)
+            _LAST_NOMINATIM = time.monotonic()
             response = self.session.get(self.NOMINATIM_URL, params=params, timeout=10)
             if response.status_code != 200:
                 return None

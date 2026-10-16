@@ -95,8 +95,10 @@ class ReportGenerator:
         quality_note = ""
         if missing_years:
             quality_note = f"Station is lacking data for {', '.join(map(str, missing_years))}; adjusted analysis accordingly."
-        elif partial_years:
-            quality_note = f"Station has partial data for {', '.join(map(str, partial_years))}; some months may be incomplete."
+        if partial_years:
+            quality_note += " " + f"Station has partial data for {', '.join(map(str, partial_years))}; some months may be incomplete."
+
+        quality_note += f" Valid daily observation coverage: {quality.get('data_coverage_percent', 'unknown')}%. Incomplete counts represent observed days only."
 
         return {
             "station_name": station_name,
@@ -105,6 +107,7 @@ class ReportGenerator:
             "location": location,
             "year_range": year_range,
             "quality_note": quality_note,
+            "threshold": f"{self.data.get('threshold_inches', 0.5):.2f}",
             "period_name": self.period_name
         }
 
@@ -261,14 +264,14 @@ class ReportGenerator:
 <body>
     <div class="report-container">
         <div class="header">
-            <h1>Historical Rain Days with &ge;0.5" Precipitation</h1>
+            <h1>Historical Rain Days with &ge;{header['threshold']}" Precipitation</h1>
             <div class="station-info">
-                The nearest NOAA station is <strong>{header['station_name']}</strong>,
+                The selected NOAA station is <strong>{header['station_name']}</strong>,
                 approximately <strong>{header['distance']} miles {header['direction']}</strong>
                 of {header['location']}.
             </div>
             <div class="station-info">
-                {header['station_name']} Weather Station ({header['year_range']}) &mdash; Full Calendar Year Data
+                {header['station_name']} Weather Station ({header['year_range']}) &mdash; Calendar-Year Observations
             </div>
         </div>
 
@@ -296,7 +299,7 @@ class ReportGenerator:
         <div class="footer">
             <p>Data source: NOAA Climate Data Online (CDO) - Global Historical Climatology Network Daily (GHCND)</p>
             <p>Report generated: {self.generated_at.strftime('%B %d, %Y at %I:%M %p')}</p>
-            <p>Precipitation threshold: &ge;0.5 inches per day</p>
+            <p>Precipitation threshold: &ge;{header['threshold']} inches per day</p>
         </div>
     </div>
 </body>
@@ -340,7 +343,7 @@ class ReportGenerator:
 
         # Title section
         ws.merge_cells('A1:' + get_column_letter(len(years) + 2) + '1')
-        ws['A1'] = "Historical Rain Days with ≥0.5\" Precipitation"
+        ws['A1'] = f"Historical Rain Days with ≥{header['threshold']}\" Precipitation"
         ws['A1'].font = Font(bold=True, size=16)
 
         ws.merge_cells('A2:' + get_column_letter(len(years) + 2) + '2')
@@ -348,7 +351,7 @@ class ReportGenerator:
         ws['A2'].font = Font(size=11)
 
         ws.merge_cells('A3:' + get_column_letter(len(years) + 2) + '3')
-        ws['A3'] = f"Period: {header['year_range']} - Full Calendar Year Data"
+        ws['A3'] = f"Period: {header['year_range']} - Calendar-Year Observations"
         ws['A3'].font = Font(size=11)
 
         if header['quality_note']:
@@ -454,7 +457,7 @@ class ReportGenerator:
         lines = []
 
         # Header info
-        lines.append(f"# Historical Rain Days with >=0.5\" Precipitation")
+        lines.append(f"# Historical Rain Days with >={header['threshold']}\" Precipitation")
         lines.append(f"# Station: {header['station_name']} ({header['distance']} miles {header['direction']} of {header['location']})")
         lines.append(f"# Period: {header['year_range']}")
         if header['quality_note']:
@@ -561,16 +564,16 @@ class ReportGenerator:
         elements = []
 
         # Title
-        elements.append(Paragraph("Historical Rain Days with &ge;0.5\" Precipitation", title_style))
+        elements.append(Paragraph(f"Historical Rain Days with &ge;{header['threshold']}\" Precipitation", title_style))
 
         # Station info
         elements.append(Paragraph(
-            f"The nearest NOAA station is <b>{header['station_name']}</b>, "
+            f"The selected NOAA station is <b>{header['station_name']}</b>, "
             f"approximately <b>{header['distance']} miles {header['direction']}</b> of {header['location']}.",
             info_style
         ))
         elements.append(Paragraph(
-            f"{header['station_name']} Weather Station ({header['year_range']}) - Full Calendar Year Data",
+            f"{header['station_name']} Weather Station ({header['year_range']}) - Calendar-Year Observations",
             info_style
         ))
 
@@ -672,7 +675,7 @@ class ReportGenerator:
             footer_style
         ))
         elements.append(Paragraph(
-            f"Precipitation threshold: &ge;0.5 inches per day",
+            f"Precipitation threshold: &ge;{header['threshold']} inches per day",
             footer_style
         ))
 

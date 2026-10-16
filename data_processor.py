@@ -11,6 +11,7 @@ from typing import Dict, List, Optional, Tuple
 from datetime import datetime
 from collections import defaultdict
 import logging
+import math
 
 logger = logging.getLogger(__name__)
 
@@ -64,18 +65,27 @@ class PrecipitationProcessor:
         max_precip = 0.0
 
         for record in self.raw_data:
-            date_str = record.get("date", "")[:10]  # YYYY-MM-DD
-            value = record.get("value", 0)
-
-            # With units=standard, values are already in inches
-            precip_inches = value / NOAA_PRCP_DIVISOR
-
-            self.daily_precip[date_str] = precip_inches
-
-            if precip_inches >= self.threshold:
-                rain_day_count += 1
-            if precip_inches > max_precip:
-                max_precip = precip_inches
+            if record.get("datatype", "PRCP") != "PRCP":
+                continue
+            date_str = record.get("date", "")[:10]
+            try:
+                date = datetime.strptime(date_str, "%Y-%m-%d")
+                value = float(record["value"])
+            except (KeyError, TypeError, ValueError):
+                continue
+            flags = record.get("attributes", "").split(",")
+            # GHCND attributes: measurement, quality, source, observation time.
+            if len(flags) > 1 and flags[1].strip():
+                continue
+            if flags[0].strip() == "P":  # missing presumed zero (GHCND measurement flag)
+                continue
+            if not self.start_year <= date.year <= self.end_year or not math.isfinite(value) or value < 0:
+                continue
+            if date_str in self.daily_precip and self.daily_precip[date_str] != value:
+                raise ValueError(f"Conflicting precipitation observations for {date_str}")
+            self.daily_precip[date_str] = value / NOAA_PRCP_DIVISOR
+            rain_day_count += int(value >= self.threshold)
+            max_precip = max(max_precip, value)
 
         logger.info(f"Processed {len(self.raw_data)} records (threshold: {self.threshold}\")")
         logger.info(f"Max precipitation value: {max_precip:.2f} inches")
@@ -137,7 +147,7 @@ class PrecipitationProcessor:
                     self.data_quality[year][month] = "missing"
                 elif actual_days < expected_days * 0.5:
                     self.data_quality[year][month] = "sparse"
-                elif actual_days < expected_days * 0.9:
+                elif actual_days < expected_days:
                     self.data_quality[year][month] = "partial"
                 else:
                     self.data_quality[year][month] = "complete"
@@ -145,7 +155,7 @@ class PrecipitationProcessor:
             # Determine overall year quality
             if year_data_count == 0:
                 self.missing_years.append(year)
-            elif year_data_count < year_expected_count * 0.8:
+            elif year_data_count < year_expected_count:
                 self.partial_years.append(year)
 
     @staticmethod
@@ -198,7 +208,7 @@ class PrecipitationProcessor:
                 averages[month] = (None, False)
             else:
                 avg = sum(values) / len(values)
-                is_approximate = missing_count > 0
+                is_approximate = any(self.data_quality[y][month] != "complete" for y in self.years)
                 averages[month] = (round(avg, 1), is_approximate)
 
         return averages
@@ -250,7 +260,7 @@ class PrecipitationProcessor:
             return (None, False)
 
         avg = sum(valid_totals) / len(valid_totals)
-        is_approximate = len(valid_totals) < len(self.years)
+        is_approximate = any(self.data_quality[y][m] != "complete" for y in self.years for m in range(1, 13))
 
         return (round(avg, 1), is_approximate)
 
@@ -267,7 +277,7 @@ class PrecipitationProcessor:
             "total_years_requested": len(self.years),
             "complete_years": len(self.years) - len(self.missing_years) - len(self.partial_years),
             "data_coverage_percent": round(
-                (1 - len(self.missing_years) / len(self.years)) * 100, 1
+                len(self.daily_precip) / sum(366 if self._is_leap_year(y) else 365 for y in self.years) * 100, 1
             ) if self.years else 0
         }
 
@@ -286,6 +296,7 @@ class PrecipitationProcessor:
             "average_total": self.get_average_total(),
             "data_quality": self.get_data_quality_summary(),
             "month_names": MONTH_NAMES,
+            "monthly_quality": self.data_quality,
             "threshold_inches": self.threshold
         }
 

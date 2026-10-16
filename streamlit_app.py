@@ -94,7 +94,10 @@ def get_api_key():
     """Get NOAA API key from secrets."""
     try:
         raw_key = st.secrets["NOAA_API_KEY"]
-        return clean_api_key(raw_key)
+        if not isinstance(raw_key, str):
+            return None
+        key = clean_api_key(raw_key)
+        return None if key in {"paste-your-32-character-key-here", "your-key-here"} else key
     except (KeyError, FileNotFoundError):
         return None
 
@@ -184,6 +187,97 @@ def create_results_dataframe(analysis_data):
     data.append(total_row)
 
     return pd.DataFrame(data)
+
+
+def render_results(results, station, location, zip_code, threshold):
+    st.info(f"Selected station: {station['name']} ({station['id']}); {station.get('distance_miles', '?')} miles from {location['full_location']}.")
+    # Display results in tabs
+    if results:
+        st.subheader(f"Historical Rain Days with ≥{format_threshold(threshold)} Precipitation")
+
+        tabs = st.tabs([results[p]["period_name"] for p in sorted(results.keys(), key=lambda x: TIME_PERIODS[x]["years"])])
+
+        for tab, period in zip(tabs, sorted(results.keys(), key=lambda x: TIME_PERIODS[x]["years"])):
+            with tab:
+                result = results[period]
+                analysis = result["analysis"]
+
+                quality = analysis["data_quality"]
+                if quality["partial_years"]:
+                    st.warning(f"Incomplete observations for years: {quality['partial_years']}; counts are observed days, not full-year allowances.")
+                if quality["missing_years"]:
+                    st.warning(f"Missing data for years: {', '.join(map(str, quality['missing_years']))}")
+
+                df = create_results_dataframe(analysis)
+
+                st.dataframe(
+                    df,
+                    width="stretch",
+                    hide_index=True,
+                    column_config={
+                        "Month": st.column_config.TextColumn("Month", width="medium"),
+                        "Average": st.column_config.TextColumn(f"{result['period_name']} Avg", width="small")
+                    }
+                )
+
+                col1, col2, col3 = st.columns(3)
+                with col1:
+                    avg_total, _ = analysis["average_total"]
+                    st.metric("Avg Rain Days/Year", f"{avg_total if avg_total is not None else '-'}")
+                with col2:
+                    st.metric("Years Analyzed", len(analysis["years"]))
+                with col3:
+                    st.metric("Data Coverage", f"{quality['data_coverage_percent']}%")
+
+                st.divider()
+
+                # Export options
+                st.subheader("Export Report")
+                export_col1, export_col2, export_col3 = st.columns(3)
+
+                # Update analysis with threshold for report
+                analysis["threshold_inches"] = threshold
+
+                generator = ReportGenerator(station, location, analysis, result["period_name"])
+
+                # Format threshold for filename (e.g., 0.50 -> "0.50in")
+                threshold_str = f"{threshold:.2f}in"
+
+                with export_col1:
+                    try:
+                        excel_data = generator.generate_excel()
+                        st.download_button(
+                            "📊 Download Excel",
+                            data=excel_data,
+                            file_name=f"weather_{zip_code}_{threshold_str}_{period}.xlsx",
+                            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                            width="stretch"
+                        )
+                    except Exception as e:
+                        st.error(f"Excel export unavailable: {e}")
+
+                with export_col2:
+                    csv_data = generator.generate_csv()
+                    st.download_button(
+                        "📄 Download CSV",
+                        data=csv_data,
+                        file_name=f"weather_{zip_code}_{threshold_str}_{period}.csv",
+                        mime="text/csv",
+                        width="stretch"
+                    )
+
+                with export_col3:
+                    try:
+                        pdf_data = generator.generate_pdf()
+                        st.download_button(
+                            "📑 Download PDF",
+                            data=pdf_data,
+                            file_name=f"weather_{zip_code}_{threshold_str}_{period}.pdf",
+                            mime="application/pdf",
+                            width="stretch"
+                        )
+                    except Exception as e:
+                        st.error(f"PDF export unavailable: {e}")
 
 
 def main():
@@ -276,6 +370,7 @@ def main():
 
     # Main content area
     if analyze_clicked and zip_code and selected_periods:
+        st.session_state.pop("completed_analysis", None)
         # Validate zip code
         geocoder = ZipCodeGeocoder()
         if not geocoder.validate_zip_code(zip_code):
@@ -359,91 +454,7 @@ def main():
 
             progress_bar.progress(100, text="Analysis complete!")
 
-            # Display results in tabs
-            if results:
-                st.subheader(f"Historical Rain Days with ≥{format_threshold(threshold)} Precipitation")
-
-                tabs = st.tabs([results[p]["period_name"] for p in sorted(results.keys(), key=lambda x: TIME_PERIODS[x]["years"])])
-
-                for tab, period in zip(tabs, sorted(results.keys(), key=lambda x: TIME_PERIODS[x]["years"])):
-                    with tab:
-                        result = results[period]
-                        analysis = result["analysis"]
-
-                        quality = analysis["data_quality"]
-                        if quality["missing_years"]:
-                            st.warning(f"Missing data for years: {', '.join(map(str, quality['missing_years']))}")
-
-                        df = create_results_dataframe(analysis)
-
-                        st.dataframe(
-                            df,
-                            width="stretch",
-                            hide_index=True,
-                            column_config={
-                                "Month": st.column_config.TextColumn("Month", width="medium"),
-                                "Average": st.column_config.TextColumn(f"{result['period_name']} Avg", width="small")
-                            }
-                        )
-
-                        col1, col2, col3 = st.columns(3)
-                        with col1:
-                            avg_total, _ = analysis["average_total"]
-                            st.metric("Avg Rain Days/Year", f"{avg_total or '-'}")
-                        with col2:
-                            st.metric("Years Analyzed", len(analysis["years"]))
-                        with col3:
-                            st.metric("Data Coverage", f"{quality['data_coverage_percent']}%")
-
-                        st.divider()
-
-                        # Export options
-                        st.subheader("Export Report")
-                        export_col1, export_col2, export_col3 = st.columns(3)
-
-                        # Update analysis with threshold for report
-                        analysis["threshold_inches"] = threshold
-
-                        generator = ReportGenerator(station, location, analysis, result["period_name"])
-
-                        # Format threshold for filename (e.g., 0.50 -> "0.50in")
-                        threshold_str = f"{threshold:.2f}in"
-
-                        with export_col1:
-                            try:
-                                excel_data = generator.generate_excel()
-                                st.download_button(
-                                    "📊 Download Excel",
-                                    data=excel_data,
-                                    file_name=f"weather_{zip_code}_{threshold_str}_{period}.xlsx",
-                                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                                    width="stretch"
-                                )
-                            except Exception as e:
-                                st.error(f"Excel export unavailable: {e}")
-
-                        with export_col2:
-                            csv_data = generator.generate_csv()
-                            st.download_button(
-                                "📄 Download CSV",
-                                data=csv_data,
-                                file_name=f"weather_{zip_code}_{threshold_str}_{period}.csv",
-                                mime="text/csv",
-                                width="stretch"
-                            )
-
-                        with export_col3:
-                            try:
-                                pdf_data = generator.generate_pdf()
-                                st.download_button(
-                                    "📑 Download PDF",
-                                    data=pdf_data,
-                                    file_name=f"weather_{zip_code}_{threshold_str}_{period}.pdf",
-                                    mime="application/pdf",
-                                    width="stretch"
-                                )
-                            except Exception as e:
-                                st.error(f"PDF export unavailable: {e}")
+            st.session_state["completed_analysis"] = (results, station, location, zip_code, threshold)
 
         except ValueError as e:
             st.error(f"API Error: {str(e)}")
@@ -454,6 +465,10 @@ def main():
             if st.checkbox("Show error details"):
                 st.exception(e)
 
+    if "completed_analysis" in st.session_state:
+        saved = st.session_state["completed_analysis"]
+        st.caption(f"Displayed analysis: ZIP {saved[3]}, threshold {saved[4]:.2f} inches. Click Analyze to apply changed inputs.")
+        render_results(*saved)
     else:
         # Show instructions when no analysis is running
         st.info("👈 Enter a zip code, select a rain threshold and analysis periods, then click **Analyze Precipitation Data**")
@@ -466,7 +481,7 @@ def main():
             construction contract weather day allowances.
 
             **Features:**
-            - Find the nearest NOAA weather station to any US zip code
+            - Select a nearby NOAA weather station to any US zip code
             - Analyze 1, 2, 5, or 10 years of historical data
             - **Configurable rain threshold** (1/10", 1/4", 1/2", 3/4", 1")
             - Export professional reports in Excel, CSV, or PDF format
@@ -491,6 +506,8 @@ def main():
             | 98101 | Seattle, WA | Wet |
             | 33101 | Miami, FL | Wet (summer storms) |
             """)
+
+    st.caption("Geocoding: US Census Bureau and © OpenStreetMap contributors (ODbL). https://www.openstreetmap.org/copyright")
 
     # Footer
     st.divider()
